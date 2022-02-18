@@ -13,6 +13,9 @@ The following Python exporters have been provided
 The following dashboards have been provided:
 - PowerStore details: Includes capacity and performance metrics, for the appliance as well as for individual volumes and ports
 - PowerEdge details: Includes Power, Voltage, Fans and Temperature metrics
-- Storage Details: Shows all important storage metrics for a given PowerStore in a single row. Add multiple rows to show multiple arrays
+- Storage Summary: Shows all important storage metrics for a given PowerStore in a single row. Add multiple rows to show multiple arrays
 - Health Summary: This shows the Health metrics that are produced by the PowerStore and PowerEdge exporters
- 
+
+![Storage Summary Dashboard](https://vexposeblog.files.wordpress.com/2022/02/storage-summary.png)
+![Storage Summary Dashboard](https://vexposeblog.files.wordpress.com/2022/02/grafana-powerstore.png)
+
