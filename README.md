@@ -18,4 +18,4 @@ The following dashboards have been provided:
 
 ![Storage Summary Dashboard](https://vexposeblog.files.wordpress.com/2022/02/storage-summary.png)
 ![Storage Summary Dashboard](https://vexposeblog.files.wordpress.com/2022/02/grafana-powerstore.png)
-
+![Storage Summary Dashboard](https://vexposeblog.files.wordpress.com/2022/02/poweredge.png)
