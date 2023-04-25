@@ -39,6 +39,19 @@ FC_BANDW_WRITE = Gauge('fc_bandwidth_write','FC port Write Bandwidth',['fc_name'
 ETH_BANDW_READ = Gauge('eth_bandwitdh_read','Ethernet port Read Bandwidth in bits per sec',['eth_name'])
 ETH_BANDW_WRITE = Gauge('eth_bandwidth_write','Ethernet port Write Bandwidth in bits per sec',['eth_name'])
 HEALTH = Gauge('array_health', 'Overall health of the array as a percentage')
+VOL_CAP_LOG_PROV = Gauge('logical_provisioned','Volume logical provisioned',['vol_name'])
+VOL_CAP_LOG_USED = Gauge('logical_used','Volume logical used',['vol_name'])
+DRIVE_WEAR = Gauge('drive_wear','Drive wear',['drive_name'])
+NODE_CPU = Gauge('node_cpu','Node CPU Utilization',['node_id'])
+HOST_IOPS_READ = Gauge('host_iops_read','Volume Read IOPS',['host_name'])
+HOST_IOPS_WRITE = Gauge('host_iops_write','Volume Write IOPS',['host_name'])
+HOST_BANDW_READ = Gauge('host_bandwith_read','Volume Read Bandwidth',['host_name'])
+HOST_BANDW_WRITE = Gauge('host_bandwidth_write','Volume Write Bandwidth',['host_name'])
+HOST_IOSIZE_READ = Gauge('host_iosize_read','Volume Read IO Size in Bytes????',['host_name'])
+HOST_IOSIZE_WRITE = Gauge('host_iosize_write','Volume Write IO Size in Bytes???',['host_name'])
+HOST_LATENCY_READ = Gauge('host_latency_read','Volume Read IO Latency in ms???',['host_name'])
+HOST_LATENCY_WRITE = Gauge('host_latency_write','Volume Write IO Latency in ms???',['host_name'])
+HOST_IOSIZE = Gauge('host_io_size','Average Host IO Size',['host_name'])
 
 def get_token():
     ### We need to run a GET call first in order to get the CSRF token
@@ -139,6 +152,28 @@ def volume_perf_metrics():
                 VOL_LATENCY_READ.labels(vol_name=each_vol["name"]).set(0)
                 VOL_LATENCY_WRITE.labels(vol_name=each_vol["name"]).set(0)
     return
+def volume_cap_metrics():
+    ### Volume-level capacity  metrics
+
+	# First we get a list of volumes. We get the "type" as well so that we can filter out snapshots
+    url = baseurl + "/volume?select=id,name,type"
+    resp_vols = requests.get(url, auth=(username, password), headers=headers, verify=False)
+
+    # Now we are going to get the metrics for each individual volume
+    url = baseurl + "/metrics/generate"
+    for each_vol in resp_vols.json():
+        if each_vol["type"] != "Snapshot": # I am not tracking performance of snapshots
+            json_body = {"entity": "space_metrics_by_volume","entity_id": each_vol["id"] ,"interval": interval}
+            resp = requests.post(url, json=json_body, auth=(username, password), headers=headers, verify=False)
+            json_resp = json.loads(resp.content)
+            if len(json_resp) > 0:
+#                print(json_resp)
+                VOL_CAP_LOG_PROV.labels(vol_name=each_vol["name"]).set(json_resp[-1]["logical_provisioned"])
+                VOL_CAP_LOG_USED.labels(vol_name=each_vol["name"]).set(json_resp[-1]["logical_used"])
+            else: # If no data is given for a volume then make the value 0
+                VOL_CAP_LOG_PROV.labels(vol_name=each_vol["name"]).set(0)
+                VOL_CAP_LOG_USED.labels(vol_name=each_vol["name"]).set(0)
+    return
 
 
 def fe_fc_port_perf_metrics():
@@ -179,6 +214,80 @@ def fe_eth_port_perf_metrics():
         ETH_BANDW_WRITE.labels(eth_name=each_port["name"]).set(json_resp[-1]["avg_bytes_rx_ps"])
     return
 
+def drive_wear_metrics():
+
+    ### Drive wear metrics
+
+    # First we get a list of ports
+    url = baseurl + "/hardware?select=id,name&type=eq.Drive"
+    resp_drives = requests.get(url, auth=(username, password), headers=headers, verify=False)
+
+    # Now we are going to get the metrics for each individual drive
+    url = baseurl + "/metrics/generate"
+    for each_drive in resp_drives.json():
+        json_body = {"entity": "wear_metrics_by_drive_daily","entity_id": each_drive["id"] ,"interval": "One_Day"}
+        resp = requests.post(url, json=json_body, auth=(username, password), headers=headers, verify=False)
+        json_resp = json.loads(resp.content)
+        DRIVE_WEAR.labels(drive_name=each_drive["name"]).set(json_resp[-1]["percent_endurance_remaining"])
+    return
+
+
+def node_perf_metrics():
+
+    # First we get a list of Nodes
+    url = baseurl + "/node"
+    resp_nodes = requests.get(url, auth=(username, password), headers=headers, verify=False)
+
+    ### Node level performance metrics
+    url = baseurl + "/metrics/generate"
+    for each_node in resp_nodes.json():
+        json_body = {"entity": "performance_metrics_by_node","entity_id": each_node["id"],"interval": interval}
+        resp = requests.post(url, json=json_body, auth=(username, password), headers=headers, verify=False)
+        if resp.status_code == 200:
+            json_resp = json.loads(resp.content)
+            ### Update Prometheus metrics
+            NODE_CPU.labels(node_id=each_node["id"]).set(json_resp[-1]["avg_io_workload_cpu_utilization"])
+        else:
+            print("Failed to get Performance metrics")
+    return 
+
+def host_perf_metrics():
+
+    # First we get a list of Hosts
+    url = baseurl + "/host?select=id,name"
+    resp_hosts = requests.get(url, auth=(username, password), headers=headers, verify=False)
+
+    ### Hosts level performance metrics
+    url = baseurl + "/metrics/generate"
+    for each_host in resp_hosts.json():
+        json_body = {"entity": "performance_metrics_by_host","entity_id": each_host["id"],"interval": interval}
+        resp = requests.post(url, json=json_body, auth=(username, password), headers=headers, verify=False)
+        if resp.status_code == 200:
+            json_resp = json.loads(resp.content)
+            if len(json_resp) > 0: # Update Prometheus metrics
+                HOST_IOPS_READ.labels(host_name=each_host["name"]).set(json_resp[-1]["avg_read_iops"])
+                HOST_IOPS_WRITE.labels(host_name=each_host["name"]).set(json_resp[-1]["avg_write_iops"])
+                HOST_BANDW_READ.labels(host_name=each_host["name"]).set(json_resp[-1]["avg_read_bandwidth"])
+                HOST_BANDW_WRITE.labels(host_name=each_host["name"]).set(json_resp[-1]["avg_write_bandwidth"])
+                HOST_IOSIZE_READ.labels(host_name=each_host["name"]).set(json_resp[-1]["avg_read_size"])
+                HOST_IOSIZE_WRITE.labels(host_name=each_host["name"]).set(json_resp[-1]["avg_write_size"])
+                HOST_LATENCY_READ.labels(host_name=each_host["name"]).set(json_resp[-1]["avg_read_latency"])
+                HOST_LATENCY_WRITE.labels(host_name=each_host["name"]).set(json_resp[-1]["avg_write_latency"])
+                HOST_IOSIZE.labels(host_name=each_host["name"]).set(json_resp[-1]["avg_io_size"])
+            else: # If no data is given for a hostume then make the value 0
+                HOST_IOPS_READ.labels(host_name=each_host["name"]).set(0)
+                HOST_IOPS_WRITE.labels(host_name=each_host["name"]).set(0)
+                HOST_BANDW_READ.labels(host_name=each_host["name"]).set(0)
+                HOST_BANDW_WRITE.labels(host_name=each_host["name"]).set(0)
+                HOST_IOSIZE_READ.labels(host_name=each_host["name"]).set(0)
+                HOST_IOSIZE_WRITE.labels(host_name=each_host["name"]).set(0)
+                HOST_LATENCY_READ.labels(host_name=each_host["name"]).set(0)
+                HOST_LATENCY_WRITE.labels(host_name=each_host["name"]).set(0)
+                HOST_IOSIZE.labels(host_name=each_host["name"]).set(0)
+        else:
+            print("Failed to get Performance metrics")
+    return
+
 def calculate_health(health_items): 
     current_health = 100 - max(health_items) # Use this to take the max impact across all categories
     #current_health = 100 - sum(health_items) # Use this to show cumulative impact of multiple issues
@@ -199,10 +308,13 @@ if __name__ == '__main__':
         health_items.append(appliance_cap_metrics()) #This is being used to calculate health
         health_items.append(appliance_perf_metrics()) #This is being used to calculate health
         volume_perf_metrics()
+        volume_cap_metrics()
         fe_fc_port_perf_metrics()
         fe_eth_port_perf_metrics()
+        drive_wear_metrics()
+        node_perf_metrics()
+        host_perf_metrics()
         calculate_health(health_items)
-
         end = time.time()
         print("collection completed in ", "%.2f" % (end - start), " seconds")
         time.sleep(300)
